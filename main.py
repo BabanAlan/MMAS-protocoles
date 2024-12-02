@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import filedialog, messagebox
+from tkinter import filedialog, messagebox, ttk
 
 global team_num
 team_num = 0
@@ -9,6 +9,8 @@ class ScoreApp:
         self.root = root
         self.root.title("Подсчет очков")
         self.file_selected = False  # Флаг, указывающий, был ли выбран файл
+        self.active_blue_player = None
+        self.active_red_player = None
 
         # Главное окно с кнопкой выбора файла
         self.start_frame = tk.Frame(self.root, padx=50, pady=50)
@@ -16,7 +18,7 @@ class ScoreApp:
         self.division = ""
 
         tk.Label(self.start_frame, text="Выберите файл с участниками", font=("Arial", 18)).pack(pady=20)
-        tk.Button(self.start_frame, text="Выбрать файл", font=("Arial", 18), command=self.load_participants).pack(pady=10)
+        tk.Button(self.start_frame, text="Выбрать файл", font=("Arial", 18), cursor="hand2", command=self.load_participants).pack(pady=10)
 
 
     def load_participants(self):
@@ -75,22 +77,20 @@ class ScoreApp:
         team_num = 0  # Сбрасываем номер команды для правильного расположения
 
         # Создаем фреймы для команд
-        self.blue_frame = self.create_team_frame("Синие", self.blue_scores, "#0D99FF", "#ADD8E6", "#A6C7DF")
-        self.red_frame = self.create_team_frame("Красные", self.red_scores, "#F24822", "#FFC7C2", "#DFAEAA")
+        self.blue_frame = self.create_team_frame("Синие", self.blue_scores, "#0D99FF", "#ADD8E6", "#A6C7DF", "blue")
+        self.red_frame = self.create_team_frame("Красные", self.red_scores, "#F24822", "#FFC7C2", "#DFAEAA", "red")
 
         # Фрейм для кнопки "Выбрать файл"
         button_frame = tk.Frame(self.root, borderwidth=2)
         button_frame.grid(column=0, row=1, columnspan=2, sticky="ew", pady=15)  # Располагаем под командами
         
-        tk.Button(button_frame, text="Результаты", font=("Arial", 18), command=self.show_results).pack(side="top")
-        tk.Button(button_frame, text="Новый Дивизион", font=("Arial", 18), command=self.load_participants).pack(side="left", padx=(30, 0), pady=(30, 0))
+        tk.Button(button_frame, text="Результаты", font=("Arial", 18), cursor="hand2", command=self.show_results).pack(side="top")
+        tk.Button(button_frame, text="Новый Дивизион", font=("Arial", 18 ), cursor="hand2", command=self.load_participants).pack(side="left", padx=(30, 0), pady=(30, 0))
 
 
-
-    def create_team_frame(self, team_name, scores, color, label_bg, border_color):
+    def create_team_frame(self, team_name, scores, color, label_bg, border_color, team):
         global team_num
         frame = tk.Frame(self.root, bg=color, bd=3, relief="solid", padx=30, pady=30)  # Внутренние отступы
-        # frame.pack(side=tk.LEFT, padx=30, pady=15)
         frame.grid(column=team_num, row=0, padx=30, pady=15)
         team_num += 1
         # Заголовок команды
@@ -111,52 +111,159 @@ class ScoreApp:
         total_label.pack(pady=15)
         scores["total_label"] = total_label
 
+        # Кнопки для изменения общего счета команды и счета активного игрока
+        button_frame = tk.Frame(frame, bg=color)
+        button_frame.pack(pady=10)
+
+        # Кнопка "-" для уменьшения счета
+        minus_button = tk.Button(button_frame, text="-", width=10, font=("Arial", 30), cursor="hand2", command=lambda: self.update_team_score(scores, -1, team))
+        minus_button.pack(side="left", padx=10)
+
+        # Кнопка "+" для увеличения счета
+        plus_button = tk.Button(button_frame, text="+", width=10, font=("Arial", 30), cursor="hand2", command=lambda: self.update_team_score(scores, 1, team))
+        plus_button.pack(side="left", padx=10)
+
         return frame
+
+    def update_team_score(self, scores, delta, team):
+        if self.active_blue_player and self.active_red_player:
+            # Обновляем общий счет только для выбранной команды
+            total_score = int(scores["total_label"]["text"].split(":")[1].strip())
+            new_total_score = total_score + delta
+            scores["total_label"]["text"] = f"Счёт: {new_total_score}"
+
+            # Обновляем счет активного игрока в данной команде, если он есть
+            if team == "blue" and self.active_blue_player:
+                active_player = self.active_blue_player[0]
+                self.update_player_score(self.blue_scores, active_player, delta)
+
+            elif team == "red" and self.active_red_player:
+                active_player = self.active_red_player[0]
+                self.update_player_score(self.red_scores, active_player, delta)
+
+    def update_player_score(self, scores, player, delta):
+        # Обновляем счет конкретного игрока
+        current_score = int(scores[player]["text"])
+        new_score = current_score + delta
+        scores[player]["text"] = str(new_score)
+        self.update_total_score(scores)
 
 
     def create_player_row(self, parent, player, scores, index, label_bg, border_color):
+        """
+        Создает строку игрока с чекбоксом, именем, счетом и кнопками.
+        Чекбокс расположен слева от имени игрока.
+        """
         # Основная строка с границей
         row = tk.Frame(parent, bg="white", relief="solid", bd=0, highlightbackground=border_color, highlightthickness=1)
         row.grid(row=index, column=0, sticky="nsew", padx=0, pady=0)
 
-        # Левая часть строки — с цветным фоном и увеличенными отступами
-        tk.Label(
+        # Функции изменения цвета фона при наведении
+        def on_hover(event):
+            if player in self.blue_scores and (not self.active_blue_player or self.active_blue_player[0] != player):
+                name_label.config(bg="#87CEEB")  # Более яркий цвет для синей команды
+            elif player in self.red_scores and (not self.active_red_player or self.active_red_player[0] != player):
+                name_label.config(bg="#FFA07A")  # Более яркий цвет для красной команды
+            self.root.config(cursor="hand2")
+
+        def on_leave(event):
+            if player in self.blue_scores and (not self.active_blue_player or self.active_blue_player[0] != player):
+                name_label.config(bg=label_bg)  # Возвращаем исходный цвет
+            elif player in self.red_scores and (not self.active_red_player or self.active_red_player[0] != player):
+                name_label.config(bg=label_bg)  # Возвращаем исходный цвет
+            self.root.config(cursor="arrow")
+
+
+        # Обработчик клика на метку имени игрока
+        def on_click(event):
+            if var.get() == 0:  # Если чекбокс не активен
+                var.set(1)  # Активируем чекбокс
+                self.set_active_player(var, player, scores, name_label)  # Устанавливаем активного игрока
+
+        # Галочка для активации игрока
+        var = tk.IntVar()
+        check_button = tk.Checkbutton(
+            row,
+            variable=var,
+            font=("Arial", 18),
+            command=lambda: self.set_active_player(var, player, scores, name_label),
+            width=0
+        )
+        check_button.pack_forget()
+
+        # Левая часть строки — метка с именем игрока
+        name_label = tk.Label(
             row,
             text=player,
             bg=label_bg,
             fg="black",
-            width=25,  # Увеличиваем ширину метки
+            width=31,
             anchor="w",
-            font=("Arial", 16),  # Уменьшаем шрифт для длинных имен
+            font=("Arial", 16),
             padx=20,
             pady=10,
-            wraplength=300  # Включаем перенос текста, максимальная ширина — 300px
-        ).pack(side=tk.LEFT, fill="both")
+            wraplength=300
+        )
+        name_label.pack(side=tk.LEFT, fill="both")
+        name_label.bind("<Enter>", on_hover)  # Наведение курсора
+        name_label.bind("<Leave>", on_leave)  # Уход курсора
+        name_label.bind("<Button-1>", on_click)  # Клик по области имени
 
-        # Кнопка "-"
-        minus_button = tk.Button(row, text="-", font=("Arial", 18), width=5, height=2, command=lambda p=player: self.update_score(scores, p, -1), bd=0, relief="flat")
-        minus_button.pack(side=tk.LEFT)
-
-        # Метка с текущим счетом
+        # Метка счета игрока
         score_label = tk.Label(row, text="0", bg="white", fg="black", width=6, font=("Arial", 18))
         score_label.pack(side=tk.LEFT)
         scores[player] = score_label
 
-        # Кнопка "+"
-        plus_button = tk.Button(row, text="+", font=("Arial", 18), width=5, height=2, command=lambda p=player: self.update_score(scores, p, 1), bd=0, relief="flat")
-        plus_button.pack(side=tk.LEFT)
+
+    def set_active_player(self, var, player, scores, name_label):
+        """
+        Устанавливает активного игрока для команды.
+        Меняет фон метки имени активного игрока на яркий цвет, а у предыдущего активного игрока возвращает исходный цвет.
+        """
+        if player in self.blue_scores:  # Если игрок принадлежит синей команде
+            if var.get() == 1:  # Если галочка установлена
+                # Сбрасываем предыдущего активного игрока
+                if self.active_blue_player:
+                    self.active_blue_player[1].set(0)  # Снимаем галочку
+                    self.active_blue_player[2].config(bg="#ADD8E6")  # Возвращаем исходный цвет имени
+
+                # Устанавливаем нового активного игрока
+                self.active_blue_player = (player, var, name_label)
+                name_label.config(bg="#0D99FF")  # Устанавливаем яркий цвет для имени
+
+        elif player in self.red_scores:  # Если игрок принадлежит красной команде
+            if var.get() == 1:  # Если галочка установлена
+                # Сбрасываем предыдущего активного игрока
+                if self.active_red_player:
+                    self.active_red_player[1].set(0)  # Снимаем галочку
+                    self.active_red_player[2].config(bg="#FFC7C2")  # Возвращаем исходный цвет имени
+
+                # Устанавливаем нового активного игрока
+                self.active_red_player = (player, var, name_label)
+                name_label.config(bg="#F24822")  # Устанавливаем яркий цвет для имени
 
 
-    def update_score(self, scores, player, delta):
-        current_score = int(scores[player]["text"])
-        new_score = current_score + delta  # Теперь счет может быть и отрицательным
-        scores[player]["text"] = str(new_score)
-        self.update_total_score(scores)
+    def update_score(self, scores, team, delta):
+        # Проверяем, какой команде нужно обновить счет
+        if team == "blue" and self.active_blue_player:
+            player = self.active_blue_player[0]
+            current_score = int(scores[player]["text"])
+            new_score = current_score + delta
+            scores[player]["text"] = str(new_score)
+            self.update_total_score(scores)
+
+        elif team == "red" and self.active_red_player:
+            player = self.active_red_player[0]
+            current_score = int(scores[player]["text"])
+            new_score = current_score + delta
+            scores[player]["text"] = str(new_score)
+            self.update_total_score(scores)
 
 
     def update_total_score(self, scores):
         total = sum(int(label["text"]) for player, label in scores.items() if player not in ["total_label", "players_frame"])
         scores["total_label"]["text"] = f"Счёт: {total}"
+
 
     def show_results(self):
         """
@@ -253,10 +360,12 @@ class ScoreApp:
             results_window,
             text="Закрыть",
             font=("Arial", 14),
+            cursor="hand2",
             command=results_window.destroy
         ).pack(pady=20)
 
 
+# Запуск приложения
 if __name__ == "__main__":
     root = tk.Tk()
     app = ScoreApp(root)
