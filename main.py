@@ -9,6 +9,7 @@ class ScoreApp:
         self.root = root
         self.root.title("Подсчет очков")
         self.file_selected = False  # Флаг, указывающий, был ли выбран файл
+        
         self.active_blue_player = None
         self.active_red_player = None
 
@@ -54,7 +55,14 @@ class ScoreApp:
                 self.blue_scores = {name: 0 for name in blue_team}
                 self.red_scores = {name: 0 for name in red_team}
 
+                self.blue_missed = {name: 0 for name in self.blue_scores}  # Пропущенные очки для синих
+                self.red_missed = {name: 0 for name in self.red_scores}  # Пропущенные очки для красных
+
+                    # Удаляем все виджеты, включая кнопку
+            for widget in self.root.winfo_children():
+                widget.pack_forget()
             # После успешного выбора файла отображаем команды
+
             self.display_teams()
 
         except ValueError as e:
@@ -67,18 +75,22 @@ class ScoreApp:
         """
         Отображает команды на экране после выбора файла.
         """
-        # Удаляем все виджеты, включая кнопку
-        for widget in self.root.winfo_children():
-            widget.destroy()
 
         self.file_selected = True
         self.root.title(self.division)
+
         global team_num
         team_num = 0  # Сбрасываем номер команды для правильного расположения
 
+        try:
+            self.blue_frame.grid_forget()
+            self.red_frame.grid_forget()
+        except:
+            pass
+
         # Создаем фреймы для команд
-        self.blue_frame = self.create_team_frame("Синие", self.blue_scores, "#0D99FF", "#ADD8E6", "#A6C7DF", "blue")
-        self.red_frame = self.create_team_frame("Красные", self.red_scores, "#F24822", "#FFC7C2", "#DFAEAA", "red")
+        self.blue_frame = self.create_team_frame("Синие", self.blue_scores, "#0D92FF", "#ADD8E6", "#A6C7DF", "blue")
+        self.red_frame = self.create_team_frame("Красные", self.red_scores, "#FF390D", "#FFC7C2", "#DFAEAA", "red")
 
         # Фрейм для кнопки "Выбрать файл"
         button_frame = tk.Frame(self.root, borderwidth=2)
@@ -125,21 +137,29 @@ class ScoreApp:
 
         return frame
 
+
     def update_team_score(self, scores, delta, team):
         if self.active_blue_player and self.active_red_player:
-            # Обновляем общий счет только для выбранной команды
+            # Обновляем общий счет команды
             total_score = int(scores["total_label"]["text"].split(":")[1].strip())
             new_total_score = total_score + delta
             scores["total_label"]["text"] = f"Счёт: {new_total_score}"
 
-            # Обновляем счет активного игрока в данной команде, если он есть
+            # Обновляем счет активного игрока в данной команде
             if team == "blue" and self.active_blue_player:
                 active_player = self.active_blue_player[0]
                 self.update_player_score(self.blue_scores, active_player, delta)
+                # Увеличиваем пропущенные очки для активного игрока красной команды
+                if self.active_red_player:
+                    self.red_missed[self.active_red_player[0]] += abs(delta)
 
             elif team == "red" and self.active_red_player:
                 active_player = self.active_red_player[0]
                 self.update_player_score(self.red_scores, active_player, delta)
+                # Увеличиваем пропущенные очки для активного игрока синей команды
+                if self.active_blue_player:
+                    self.blue_missed[self.active_blue_player[0]] += abs(delta)
+
 
     def update_player_score(self, scores, player, delta):
         # Обновляем счет конкретного игрока
@@ -163,7 +183,7 @@ class ScoreApp:
             if player in self.blue_scores and (not self.active_blue_player or self.active_blue_player[0] != player):
                 name_label.config(bg="#87CEEB")  # Более яркий цвет для синей команды
             elif player in self.red_scores and (not self.active_red_player or self.active_red_player[0] != player):
-                name_label.config(bg="#FFA07A")  # Более яркий цвет для красной команды
+                name_label.config(bg="#FF958C")  # Более яркий цвет для красной команды
             self.root.config(cursor="hand2")
 
         def on_leave(event):
@@ -229,7 +249,7 @@ class ScoreApp:
 
                 # Устанавливаем нового активного игрока
                 self.active_blue_player = (player, var, name_label)
-                name_label.config(bg="#0D99FF")  # Устанавливаем яркий цвет для имени
+                name_label.config(bg="#6DB3E5")  # Устанавливаем яркий цвет для имени
 
         elif player in self.red_scores:  # Если игрок принадлежит красной команде
             if var.get() == 1:  # Если галочка установлена
@@ -240,7 +260,7 @@ class ScoreApp:
 
                 # Устанавливаем нового активного игрока
                 self.active_red_player = (player, var, name_label)
-                name_label.config(bg="#F24822")  # Устанавливаем яркий цвет для имени
+                name_label.config(bg="#CF4E4E")  # Устанавливаем яркий цвет для имени
 
 
     def update_score(self, scores, team, delta):
@@ -268,13 +288,15 @@ class ScoreApp:
     def show_results(self):
         """
         Показывает результаты в новом окне.
-        Отображает две отдельные таблицы с игроками каждой команды, отсортированными по количеству очков.
+        Отображает одну общую таблицу с игроками обеих команд, с фильтрацией по кнопкам.
         """
         # Создаем новое окно
         results_window = tk.Toplevel(self.root)
         results_window.title(f"Результаты {self.division}")
-        results_window.geometry("950x600")
+        results_window.geometry("800x600")
         results_window.configure(padx=20, pady=20)
+
+        active_column = None
 
         # Вычисляем общий счет каждой команды
         blue_total = sum(int(label["text"]) for player, label in self.blue_scores.items() if player not in ["total_label", "players_frame"])
@@ -307,53 +329,95 @@ class ScoreApp:
             justify="left"
         ).pack(pady=10)
 
-        # Фрейм для таблиц
-        tables_frame = tk.Frame(results_window)
-        tables_frame.pack(pady=20)
+        # Подготовка данных для общей таблицы
+        combined_scores = []
+        for player, label in self.blue_scores.items():
+            if player not in ["total_label", "players_frame"]:
+                combined_scores.append((player, int(label["text"]), self.blue_missed[player],
+                                        int(label["text"]) - self.blue_missed[player],
+                                        round(int(label["text"]) / max(self.blue_missed[player], 1), 2), "Синие"))
+        for player, label in self.red_scores.items():
+            if player not in ["total_label", "players_frame"]:
+                combined_scores.append((player, int(label["text"]), self.red_missed[player],
+                                        int(label["text"]) - self.red_missed[player],
+                                        round(int(label["text"]) / max(self.red_missed[player], 1), 2), "Красные"))
 
-        # Создаем таблицы для каждой команды
-        for team_name, team_scores, team_color in [("Синие", self.blue_scores, "#ADD8E6"), ("Красные", self.red_scores, "#FFC7C2")]:
-            # Сортируем игроков команды по количеству очков (по убыванию)
-            sorted_team = sorted(
-                [(player, int(label["text"])) for player, label in team_scores.items() if player not in ["total_label", "players_frame"]],
-                key=lambda x: x[1],
-                reverse=True
-            )
+        # Кнопки для фильтрации
+        button_frame = tk.Frame(results_window)
+        button_frame.pack(pady=10)
 
-            # Фрейм для команды
-            team_frame = tk.Frame(tables_frame, bg=team_color, padx=15, pady=15, bd=2, relief="solid")
-            team_frame.pack(side="left", padx=10)
+        tk.Button(button_frame, text="Синие", font=("Arial", 14), command=lambda: update_table("Синие")).pack(side=tk.LEFT, padx=5)
+        tk.Button(button_frame, text="Красные", font=("Arial", 14), command=lambda: update_table("Красные")).pack(side=tk.LEFT, padx=5)
+        tk.Button(button_frame, text="Все", font=("Arial", 14), command=lambda: update_table("Все")).pack(side=tk.LEFT, padx=5)
 
-            # Заголовок таблицы
-            tk.Label(
-                team_frame,
-                text=f"Команда {team_name}",
-                font=("Arial", 16, "bold"),
-                bg=team_color,
-                fg="black"
-            ).grid(row=0, column=0, columnspan=2, pady=10)
+        # Изначальная сортировка и состояние
+        current_sort_column = [4]  # Индекс столбца для сортировки, по умолчанию КПД
+        current_sort_order = [True]  # Порядок сортировки: True - по убыванию, False - по возрастанию
+
+        # Создаем фрейм для таблицы
+        table_frame = tk.Frame(results_window)
+        table_frame.pack(pady=20)
+
+        # Заголовки столбцов
+        headers = ["Игрок ▼", "   Очки ▼   ", "Пропустил ▼", "Разница ▼", "КПД ▼", "Команда ▼"]
+
+        def sort_table_by_column(column_index):
+            """Функция для сортировки данных по выбранному столбцу."""
+            if current_sort_column[0] == column_index:
+                current_sort_order[0] = not current_sort_order[0]  # Меняем порядок сортировки
+            else:
+                current_sort_column[0] = column_index
+                current_sort_order[0] = True  # Сброс на сортировку по убыванию
+            combined_scores.sort(key=lambda x: x[column_index], reverse=current_sort_order[0])
+            update_table()
+            
+            
+        # Функция для обновления таблицы в зависимости от фильтра
+        def update_table(filter_team="Все"):
+            # Очистка предыдущих данных в таблице
+            for widget in table_frame.winfo_children():
+                widget.destroy()
 
             # Заголовки столбцов
-            tk.Label(team_frame, text="Игрок", font=("Arial", 14, "bold"), bg=team_color, anchor="w", width=20).grid(row=1, column=0, padx=5, pady=5)
-            tk.Label(team_frame, text="Очки", font=("Arial", 14, "bold"), bg=team_color, width=10).grid(row=1, column=1, padx=5, pady=5)
+            for col_index, header in enumerate(headers):
+                label = tk.Label(
+                    table_frame,
+                    text=header,
+                    font=("Arial", 14, "bold"),
+                    bg="#DDDDDD",
+                    padx=10,
+                    pady=5,
+                    borderwidth=1,
+                    relief="solid",
+                    cursor="hand2"
+                )
+                label.grid(row=0, column=col_index, sticky="nsew")
+                label.bind("<Button-1>", lambda e, col=col_index: sort_table_by_column(col))  # Привязка клика
+                label.bind("<Enter>", lambda e: e.widget.config(bg="#B9B9B9"))
+                label.bind("<Leave>", lambda e: e.widget.config(bg="#DDDDDD"))
 
-            # Заполняем таблицу для команды
-            for row_index, (player, score) in enumerate(sorted_team, start=2):
-                tk.Label(
-                    team_frame,
-                    text=player,
-                    font=("Arial", 12),
-                    bg="white",
-                    anchor="w",
-                    width=20
-                ).grid(row=row_index, column=0, padx=5, pady=2)
-                tk.Label(
-                    team_frame,
-                    text=str(score),
-                    font=("Arial", 12),
-                    bg="white",
-                    width=10
-                ).grid(row=row_index, column=1, padx=5, pady=2)
+            # Фильтрация и вывод данных
+            row_index = 1
+            for player, score, missed, diff, effic, team in combined_scores:
+                if filter_team == "Все" or team == filter_team:
+                    bg_color = "#ADD8E6" if team == "Синие" else "#FFC7C2"
+                    data = [player, score, missed, diff, effic, team]
+                    for col_index, value in enumerate(data):
+                        tk.Label(
+                            table_frame,
+                            text=str(value),
+                            font=("Arial", 12),
+                            bg=bg_color,
+                            padx=10,
+                            pady=5,
+                            borderwidth=1,
+                            relief="solid"
+                        ).grid(row=row_index, column=col_index, sticky="nsew")
+                    row_index += 1
+
+        # Изначально отображаем всю таблицу
+        combined_scores.sort(key=lambda x: x[current_sort_column[0]], reverse=current_sort_order[0])
+        update_table()
 
         # Кнопка закрытия окна
         tk.Button(
@@ -363,7 +427,6 @@ class ScoreApp:
             cursor="hand2",
             command=results_window.destroy
         ).pack(pady=20)
-
 
 # Запуск приложения
 if __name__ == "__main__":
